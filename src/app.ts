@@ -150,6 +150,32 @@ function advancedField(label: string, id: string, value: number, step = "0.01"):
   return `<label class="field"><span>${label}</span><input id="${id}" type="number" step="${step}" value="${value}" /></label>`;
 }
 
+function renderVariantPanel(state: AppState): string {
+  if (!state.useVariants) {
+    return "";
+  }
+
+  return `
+    <section class="panel panel--full">
+      <div class="panel-header"><h2>${state.labels.variants_title ?? "변이 시나리오 편집기"}</h2><div class="button-row"><button class="secondary-button" data-action="reset-variants">초기화</button><button class="primary-button" data-action="new-variant">추가</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Day</th><th>이름</th><th>요약</th><th>편집</th></tr></thead><tbody>${variantRows(state.variants, state.labels)}</tbody></table></div>
+    </section>
+  `;
+}
+
+function renderInterventionPanel(state: AppState): string {
+  if (!state.useInterventions) {
+    return "";
+  }
+
+  return `
+    <section class="panel panel--full">
+      <div class="panel-header"><h2>${state.labels.interventions_title ?? "개입 시나리오 편집기"}</h2><div class="button-row"><button class="secondary-button" data-action="reset-interventions">초기화</button><button class="primary-button" data-action="new-intervention">추가</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Day</th><th>배수</th><th>사유</th><th>편집</th></tr></thead><tbody>${interventionRows(state.interventions, state.labels)}</tbody></table></div>
+    </section>
+  `;
+}
+
 function modalMarkup(state: AppState, modal: ModalState): string {
   if (!modal) {
     return "";
@@ -278,69 +304,85 @@ export function mountApp(
     render();
   }
 
+  function runCurrentSimulation(): void {
+    try {
+      const result = runSimulation(
+        state.inputs.population,
+        state.inputs.initialInfected,
+        state.inputs.simulationDays,
+        state.inputs.vaccinationStartDay,
+        state.advanced,
+        state.useVariants,
+        state.useInterventions,
+        state.variants,
+        state.interventions
+      );
+      notice = "시뮬레이션이 정상적으로 완료되었습니다.";
+      summary = renderSummary(result);
+      chart = renderChart(result, state.labels);
+    } catch (error) {
+      notice = error instanceof Error ? error.message : "시뮬레이션 오류";
+      summary = "";
+      chart = "";
+    }
+  }
+
   function render(): void {
     syncBaseVariant();
+    const windowTitle = (state.labels.window_title ?? "SEIRS 모델 시뮬레이터").replace(/\s*\(v9\.0\)/i, "");
     target.innerHTML = `
       <div class="app-shell">
         <header class="hero">
-          <div>
-            <p class="eyebrow">Frontend Only</p>
-            <h1>${state.labels.window_title ?? "SEIRS 모델 시뮬레이터"}</h1>
-            <p class="hero-copy">Python Tkinter 앱의 계산 로직과 시나리오 편집 흐름을 브라우저 안으로 옮긴 정적 TypeScript 앱입니다.</p>
-          </div>
-          <div class="hero-stat"><span>기본 R0</span><strong>${(state.advanced.beta / Math.max(state.advanced.gamma, 0.01)).toFixed(2)}</strong></div>
+          <div><h1>${windowTitle}</h1></div>
         </header>
 
         <main class="layout">
-          <section class="panel">
-            <div class="panel-header"><h2>${state.labels.parameters_title ?? "기본 설정"}</h2></div>
-            <div class="form-grid">
-              ${advancedField(state.labels.population_label ?? "총인구", "population", state.inputs.population, "1")}
-              ${advancedField(state.labels.initial_infected_label ?? "초기 감염자", "initialInfected", state.inputs.initialInfected, "1")}
-              ${advancedField(state.labels.sim_duration_label ?? "시뮬레이션 기간", "simulationDays", state.inputs.simulationDays, "1")}
-              ${advancedField(state.labels.vax_start_day_label ?? "백신 접종 시작일", "vaccinationStartDay", state.inputs.vaccinationStartDay, "1")}
-            </div>
-            <div class="toggle-grid">
-              <label class="toggle"><input id="useVariants" type="checkbox" ${state.useVariants ? "checked" : ""} /><span>${state.labels.use_variants_label ?? "변이 시나리오 사용"}</span></label>
-              <label class="toggle"><input id="useInterventions" type="checkbox" ${state.useInterventions ? "checked" : ""} /><span>${state.labels.use_interventions_label ?? "개입 시나리오 사용"}</span></label>
-            </div>
+          <section class="main-column">
+            <section class="panel panel--result">
+              <div class="panel-header"><h2>${state.labels.simulation_result_title ?? "시뮬레이션 결과"}</h2><button class="primary-button" data-action="run-simulation">${state.labels.run_button ?? "시뮬레이션 실행"}</button></div>
+              <p class="notice">${notice}</p>
+              ${summary}
+              ${chart || '<div class="empty-state">실행 전에는 그래프가 표시되지 않습니다.</div>'}
+            </section>
           </section>
 
-          <section class="panel">
-            <div class="panel-header">
-              <h2>${state.labels.adv_settings_title ?? "상세 설정"}</h2>
-              <select id="presetSelect" class="preset-select"><option value="">프리셋 선택</option>${Object.keys(state.presets).map((name) => `<option value="${name}">${name}</option>`).join("")}</select>
-            </div>
-            <div class="form-grid">
-              ${advancedField(state.labels.infection_rate_label ?? "beta", "beta", state.advanced.beta)}
-              ${advancedField(state.labels.recovery_rate_label ?? "gamma", "gamma", state.advanced.gamma)}
-              ${advancedField(state.labels.mortality_rate_label ?? "mu", "mu", state.advanced.mu)}
-              ${advancedField(state.labels.incubation_period_label ?? "incubation", "incubationPeriod", state.advanced.incubationPeriod, "1")}
-              ${advancedField(state.labels.nat_immunity_eff_label ?? "natural efficacy", "naturalImmunityEffectiveness", state.advanced.naturalImmunityEffectiveness)}
-              ${advancedField(state.labels.nat_immunity_dur_label ?? "natural duration", "naturalImmunityDuration", state.advanced.naturalImmunityDuration, "1")}
-              ${advancedField(state.labels.vax_efficacy_label ?? "vaccine efficacy", "vaccineEffectiveness", state.advanced.vaccineEffectiveness)}
-              ${advancedField(state.labels.vax_immunity_dur_label ?? "vaccine duration", "vaccineDuration", state.advanced.vaccineDuration, "1")}
-              ${advancedField(state.labels.vax_rate_label ?? "vaccination rate", "vaccinationRate", state.advanced.vaccinationRate)}
-              ${advancedField(state.labels.rec_vax_multiplier_label ?? "recovered vaccine multiplier", "recoveredVaccineMultiplier", state.advanced.recoveredVaccineMultiplier)}
-            </div>
-          </section>
+          <aside class="sidebar">
+            <section class="panel sidebar-panel">
+              <div class="panel-header"><h2>${state.labels.parameters_title ?? "기본 설정"}</h2></div>
+              <div class="form-grid">
+                ${advancedField(state.labels.population_label ?? "총인구", "population", state.inputs.population, "1")}
+                ${advancedField(state.labels.initial_infected_label ?? "초기 감염자", "initialInfected", state.inputs.initialInfected, "1")}
+                ${advancedField(state.labels.sim_duration_label ?? "시뮬레이션 기간", "simulationDays", state.inputs.simulationDays, "1")}
+                ${advancedField(state.labels.vax_start_day_label ?? "백신 접종 시작일", "vaccinationStartDay", state.inputs.vaccinationStartDay, "1")}
+              </div>
+              <div class="toggle-grid">
+                <label class="toggle"><input id="useVariants" type="checkbox" ${state.useVariants ? "checked" : ""} /><span>${state.labels.use_variants_label ?? "변이 시나리오 사용"}</span></label>
+                <label class="toggle"><input id="useInterventions" type="checkbox" ${state.useInterventions ? "checked" : ""} /><span>${state.labels.use_interventions_label ?? "개입 시나리오 사용"}</span></label>
+              </div>
+            </section>
 
-          <section class="panel">
-            <div class="panel-header"><h2>${state.labels.variants_title ?? "변이 시나리오 편집기"}</h2><div class="button-row"><button class="secondary-button" data-action="reset-variants">초기화</button><button class="primary-button" data-action="new-variant">추가</button></div></div>
-            <div class="table-wrap"><table><thead><tr><th>Day</th><th>이름</th><th>요약</th><th>편집</th></tr></thead><tbody>${variantRows(state.variants, state.labels)}</tbody></table></div>
-          </section>
+            <section class="panel sidebar-panel">
+              <div class="panel-header">
+                <h2>${state.labels.adv_settings_title ?? "상세 설정"}</h2>
+                <select id="presetSelect" class="preset-select"><option value="">프리셋 선택</option>${Object.keys(state.presets).map((name) => `<option value="${name}">${name}</option>`).join("")}</select>
+              </div>
+              <div class="form-grid">
+                ${advancedField(state.labels.infection_rate_label ?? "beta", "beta", state.advanced.beta)}
+                ${advancedField(state.labels.recovery_rate_label ?? "gamma", "gamma", state.advanced.gamma)}
+                ${advancedField(state.labels.mortality_rate_label ?? "mu", "mu", state.advanced.mu)}
+                ${advancedField(state.labels.incubation_period_label ?? "incubation", "incubationPeriod", state.advanced.incubationPeriod, "1")}
+                ${advancedField(state.labels.nat_immunity_eff_label ?? "natural efficacy", "naturalImmunityEffectiveness", state.advanced.naturalImmunityEffectiveness)}
+                ${advancedField(state.labels.nat_immunity_dur_label ?? "natural duration", "naturalImmunityDuration", state.advanced.naturalImmunityDuration, "1")}
+                ${advancedField(state.labels.vax_efficacy_label ?? "vaccine efficacy", "vaccineEffectiveness", state.advanced.vaccineEffectiveness)}
+                ${advancedField(state.labels.vax_immunity_dur_label ?? "vaccine duration", "vaccineDuration", state.advanced.vaccineDuration, "1")}
+                ${advancedField(state.labels.vax_rate_label ?? "vaccination rate", "vaccinationRate", state.advanced.vaccinationRate)}
+                ${advancedField(state.labels.rec_vax_multiplier_label ?? "recovered vaccine multiplier", "recoveredVaccineMultiplier", state.advanced.recoveredVaccineMultiplier)}
+              </div>
+            </section>
 
-          <section class="panel">
-            <div class="panel-header"><h2>${state.labels.interventions_title ?? "개입 시나리오 편집기"}</h2><div class="button-row"><button class="secondary-button" data-action="reset-interventions">초기화</button><button class="primary-button" data-action="new-intervention">추가</button></div></div>
-            <div class="table-wrap"><table><thead><tr><th>Day</th><th>배수</th><th>사유</th><th>편집</th></tr></thead><tbody>${interventionRows(state.interventions, state.labels)}</tbody></table></div>
-          </section>
-
-          <section class="panel panel--full">
-            <div class="panel-header"><h2>${state.labels.simulation_result_title ?? "시뮬레이션 결과"}</h2><button class="primary-button" data-action="run-simulation">${state.labels.run_button ?? "시뮬레이션 실행"}</button></div>
-            <p class="notice">${notice}</p>
-            ${summary}
-            ${chart || '<div class="empty-state">실행 전에는 그래프가 표시되지 않습니다.</div>'}
-          </section>
+            ${renderVariantPanel(state)}
+            ${renderInterventionPanel(state)}
+          </aside>
         </main>
         ${modalMarkup(state, modal)}
       </div>
@@ -348,10 +390,11 @@ export function mountApp(
 
     bindEvents();
   }
-
   function bindValue(id: string, onChange: (value: number) => void): void {
     target.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener("input", (event) => {
       onChange(Number((event.currentTarget as HTMLInputElement).value));
+      runCurrentSimulation();
+      render();
     });
   }
 
@@ -380,12 +423,18 @@ export function mountApp(
 
     target.querySelector<HTMLInputElement>("#useVariants")?.addEventListener("change", (event) => {
       state.useVariants = (event.currentTarget as HTMLInputElement).checked;
+      runCurrentSimulation();
+      render();
     });
     target.querySelector<HTMLInputElement>("#useInterventions")?.addEventListener("change", (event) => {
       state.useInterventions = (event.currentTarget as HTMLInputElement).checked;
+      runCurrentSimulation();
+      render();
     });
     target.querySelector<HTMLSelectElement>("#presetSelect")?.addEventListener("change", (event) => {
       applyPreset((event.currentTarget as HTMLSelectElement).value);
+      runCurrentSimulation();
+      render();
     });
 
     target.querySelectorAll<HTMLElement>("[data-close-modal]").forEach((element) => {
@@ -403,16 +452,7 @@ export function mountApp(
         const index = element.dataset.index ? Number(element.dataset.index) : null;
 
         if (action === "run-simulation") {
-          try {
-            const result = runSimulation(state.inputs.population, state.inputs.initialInfected, state.inputs.simulationDays, state.inputs.vaccinationStartDay, state.advanced, state.useVariants, state.useInterventions, state.variants, state.interventions);
-            notice = "시뮬레이션이 정상적으로 완료되었습니다.";
-            summary = renderSummary(result);
-            chart = renderChart(result, state.labels);
-          } catch (error) {
-            notice = error instanceof Error ? error.message : "시뮬레이션 오류";
-            summary = "";
-            chart = "";
-          }
+          runCurrentSimulation();
           render();
           return;
         }
@@ -444,6 +484,7 @@ export function mountApp(
         if (action === "reset-variants") {
           state.variants = deepCopy(state.defaultVariants);
           sortAndSave();
+          runCurrentSimulation();
           render();
           return;
         }
@@ -451,6 +492,7 @@ export function mountApp(
         if (action === "reset-interventions") {
           state.interventions = deepCopy(state.defaultInterventions);
           sortAndSave();
+          runCurrentSimulation();
           render();
           return;
         }
@@ -464,6 +506,7 @@ export function mountApp(
         if (action === "delete-variant" && modal?.type === "variant" && modal.editIndex !== null && state.variants[modal.editIndex]?.day !== 0) {
           state.variants.splice(modal.editIndex, 1);
           sortAndSave();
+          runCurrentSimulation();
           modal = null;
           render();
           return;
@@ -472,6 +515,7 @@ export function mountApp(
         if (action === "delete-intervention" && modal?.type === "intervention" && modal.editIndex !== null) {
           state.interventions.splice(modal.editIndex, 1);
           sortAndSave();
+          runCurrentSimulation();
           modal = null;
           render();
           return;
@@ -487,6 +531,7 @@ export function mountApp(
           if (editIndex === null) state.interventions.push(draft);
           else if (editIndex !== undefined) state.interventions[editIndex] = draft;
           sortAndSave();
+          runCurrentSimulation();
           modal = null;
           render();
           return;
@@ -512,6 +557,7 @@ export function mountApp(
           if (editIndex === null) state.variants.push(draft);
           else if (editIndex !== undefined) state.variants[editIndex] = draft;
           sortAndSave();
+          runCurrentSimulation();
           modal = null;
           render();
         }
@@ -519,5 +565,6 @@ export function mountApp(
     });
   }
 
+  runCurrentSimulation();
   render();
 }
