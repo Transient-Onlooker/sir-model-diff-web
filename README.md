@@ -10,6 +10,20 @@ The app runs entirely in the browser and visualizes `S / E / I / R / V / D` time
 - vaccination and immunity parameters
 - local scenario persistence with `localStorage`
 
+## Project context
+
+This is the **browser-based ODE/compartment-model branch** of a three-repository learning series, rather than a port of the original grid-based stochastic simulator.
+
+| Repository | Model and implementation |
+|---|---|
+| [sir-model-classic](https://github.com/Transient-Onlooker/sir-model-classic) | Spatial, grid-based S/I/R/V/Q/D stochastic transitions in Python |
+| [sir-model-differential-equations](https://github.com/Transient-Onlooker/sir-model-differential-equations) | Python/SciPy ODE model, SIR core and extended GUI |
+| **sir-model-diff-web** | TypeScript/RK4-based compartment model with an interactive browser UI |
+
+**[Live demo](https://sir-model.mcv.kr/)**
+
+The `S / E / I / R / V / D` compartments and changing scenario parameters are implemented in [`src/simulation.ts`](src/simulation.ts). This is an educational simulation: parameter presets and intervention scenarios are hypothetical, not calibrated clinical forecasts.
+
 ## Features
 
 - SEIRS-style compartment model with vaccinated and deceased compartments
